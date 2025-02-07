@@ -1,18 +1,20 @@
 syntax = "proto3";
 package epochfs;
 
-message Checkpoint { repeated File files = 1; }
+/// The checkpoint for the fs on the epoch.
+///
+/// Every checkpoint is a file which contains a list of encoded files.
+/// The files are encoded as with length delimited.
+message Checkpoint { FileChunks chunks = 1; }
 
-message Segment { repeated File files = 1; }
+/// Files represents a list of files.
+message Files { repeated File files = 1; }
 
+/// File represents a file with a path and a list of chunks.
 message File {
   string path = 1;
-  repeated FileChunk chunks = 2;
+  FileChunks chunks = 2;
 }
 
-message FileChunk {
-  string id = 1;
-  int32 size = 2;
-}
-
-message FileChunkIds { repeated string ids = 1; }
+/// FileChunks represents a list of file chunk ids.
+message FileChunks { repeated string ids = 1; }
