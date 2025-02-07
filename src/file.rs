@@ -31,7 +31,7 @@ impl File {
     ///
     /// We can use if-not-exists to save an extra request.
     pub async fn write(&mut self, bs: Buffer) -> Result<()> {
-        let chunk_id = self.fs.upload_chunk(bs).await?;
+        let chunk_id = self.fs.write_chunk(bs).await?;
         self.chunk_ids.push(chunk_id);
         Ok(())
     }
