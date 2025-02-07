@@ -1,12 +1,11 @@
 use anyhow::Result;
 use opendal::Operator;
-use prost::Message;
 use sqlx::SqlitePool;
 
 /// Fs is the main entry point for the epoch filesystem.
 #[derive(Debug, Clone)]
 pub struct Fs {
-    db: SqlitePool,
+    _db: SqlitePool,
     _op: Operator,
 }
 
@@ -37,6 +36,6 @@ impl Fs {
         .execute(&db)
         .await?;
 
-        Ok(Fs { db, _op: op })
+        Ok(Fs { _db: db, _op: op })
     }
 }
