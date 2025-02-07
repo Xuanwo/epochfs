@@ -4,3 +4,6 @@ mod specs {
 
 mod fs;
 pub use fs::Fs;
+
+mod file;
+pub use file::File;
