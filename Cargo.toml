@@ -6,3 +6,11 @@ description = "EpochFS is a versioned cloud file system with git-like branching,
 license = "Apache-2.0"
 
 [dependencies]
+anyhow = "1.0.95"
+opendal = "0.51.2"
+prost = "0.13.4"
+sqlx = { version = "0.8.3", features = ["sqlite", "runtime-tokio", "tls-native-tls"] }
+uuid = { version = "1.13.1", features = ["v4"] }
+
+[build-dependencies]
+prost-build = "0.13.4"
