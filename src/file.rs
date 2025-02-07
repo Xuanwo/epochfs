@@ -4,21 +4,28 @@ use opendal::Buffer;
 use crate::Fs;
 
 /// File represents a file in the epochfs.
+#[derive(Debug, Clone)]
 pub struct File {
     fs: Fs,
 
     path: String,
-    chunk_ids: Vec<String>,
+    chunks: Vec<String>,
 }
 
 impl File {
     /// Create a new file.
     pub(crate) fn new(fs: Fs, path: String) -> Self {
-        Self {
-            fs,
-            path,
-            chunk_ids: Vec::new(),
-        }
+        Self::with_chunks(fs, path, Vec::new())
+    }
+
+    /// Create a new file.
+    pub(crate) fn with_chunks(fs: Fs, path: String, chunks: Vec<String>) -> Self {
+        Self { fs, path, chunks }
+    }
+
+    /// Get the path and chunks of the file.
+    pub(crate) fn into_parts(self) -> (String, Vec<String>) {
+        (self.path, self.chunks)
     }
 
     /// Write given buffer to the file.
@@ -32,15 +39,13 @@ impl File {
     /// We can use if-not-exists to save an extra request.
     pub async fn write(&mut self, bs: Buffer) -> Result<()> {
         let chunk_id = self.fs.write_chunk(bs).await?;
-        self.chunk_ids.push(chunk_id);
+        self.chunks.push(chunk_id);
         Ok(())
     }
 
     /// Commit the file to the database.
     pub async fn commit(&mut self) -> Result<()> {
-        self.fs
-            .commit_file(&self.path, self.chunk_ids.clone())
-            .await?;
+        self.fs.commit_file(&self.path, self.chunks.clone()).await?;
         Ok(())
     }
 }
