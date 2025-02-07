@@ -2,7 +2,7 @@ use std::mem;
 
 use anyhow::Result;
 use base64::Engine as _;
-use futures::TryStreamExt;
+use futures::{Stream, StreamExt, TryStreamExt};
 use opendal::{Buffer, Operator};
 use prost::Message;
 use sqlx::{QueryBuilder, SqlitePool};
@@ -105,7 +105,7 @@ impl Fs {
     }
 
     /// Check if the file exists in the filesystem.
-    pub async fn is_file_exists(&self, path: &str) -> Result<bool> {
+    pub async fn check_file(&self, path: &str) -> Result<bool> {
         let file = sqlx::query!(
             r"
                 SELECT path FROM files WHERE path = ?
@@ -134,6 +134,23 @@ impl Fs {
         .await?;
 
         Ok(())
+    }
+
+    /// List all files in the filesystem.
+    pub fn list_files(&self) -> impl Stream<Item = Result<File>> + use<'_> {
+        let fs = self.clone();
+
+        sqlx::query!("SELECT * FROM files")
+            .fetch(&self.db)
+            .map(move |record| {
+                let record = record?;
+                let file = File::with_chunks(
+                    fs.clone(),
+                    record.path,
+                    FileChunks::decode(record.chunks.as_slice())?.ids,
+                );
+                Ok(file)
+            })
     }
 
     /// Load the filesystem from storage.
@@ -172,16 +189,17 @@ impl Fs {
     /// The checkpoint consists of multiple files, each containing a
     /// batch of files.
     pub async fn commit(&self) -> Result<String> {
-        let mut file_stream = sqlx::query!("SELECT * FROM files").fetch(&self.db);
+        let mut file_stream = self.list_files();
 
         let mut chunk_ids = Vec::with_capacity(16);
         let mut size = 0;
         let mut files = Vec::with_capacity(10000);
 
         while let Some(record) = file_stream.try_next().await? {
+            let (path, chunks) = record.into_parts();
             let file = specs::File {
-                path: record.path,
-                chunks: Some(FileChunks::decode(record.chunks.as_slice())?),
+                path,
+                chunks: Some(FileChunks { ids: chunks }),
             };
             size += file.encoded_len();
             files.push(file);
@@ -271,6 +289,30 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_list_files() -> Result<()> {
+        let op = Operator::from_config(MemoryConfig::default())?.finish();
+        let fs = Fs::new(op).await?;
+
+        let source = Buffer::from("hello world");
+        let id = chunk_id(source.clone());
+
+        let mut file = fs.create_file("hello.txt").await?;
+        file.write(source.clone()).await?;
+        file.commit().await?;
+
+        let files: Vec<File> = fs.list_files().try_collect::<Vec<_>>().await?;
+        assert_eq!(files.len(), 1);
+        let (path, chunks) = files[0].clone().into_parts();
+        assert_eq!(path, "hello.txt");
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0], id);
+
+        let actual = fs.read_chunk(&id).await?;
+        assert_eq!(source.to_vec(), actual.to_vec());
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn test_save_checkpoint() -> Result<()> {
         let op = Operator::from_config(MemoryConfig::default())?.finish();
         let fs = Fs::new(op).await?;
@@ -306,7 +348,7 @@ mod tests {
         let fs = Fs::new(op).await?;
         fs.load(&checkpoint_name).await?;
 
-        assert!(fs.is_file_exists("hello.txt").await?);
+        assert!(fs.check_file("hello.txt").await?);
         Ok(())
     }
 }
