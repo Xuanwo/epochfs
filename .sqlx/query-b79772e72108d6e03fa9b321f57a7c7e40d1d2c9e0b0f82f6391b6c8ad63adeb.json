@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT * FROM files",
+  "describe": {
+    "columns": [
+      {
+        "name": "path",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "chunks",
+        "ordinal": 1,
+        "type_info": "Blob"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "b79772e72108d6e03fa9b321f57a7c7e40d1d2c9e0b0f82f6391b6c8ad63adeb"
+}
