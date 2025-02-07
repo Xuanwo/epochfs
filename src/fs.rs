@@ -2,11 +2,13 @@ use anyhow::Result;
 use opendal::Operator;
 use sqlx::SqlitePool;
 
+use crate::File;
+
 /// Fs is the main entry point for the epoch filesystem.
 #[derive(Debug, Clone)]
 pub struct Fs {
-    _db: SqlitePool,
-    _op: Operator,
+    db: SqlitePool,
+    op: Operator,
 }
 
 impl Fs {
@@ -36,6 +38,26 @@ impl Fs {
         .execute(&db)
         .await?;
 
-        Ok(Fs { _db: db, _op: op })
+        Ok(Fs { db, op })
+    }
+
+    /// Create a new file.
+    pub async fn create_file(&self, path: &str) -> Result<File> {
+        let file = sqlx::query!(
+            r"
+                SELECT path FROM files WHERE path = ?
+            ",
+            path
+        )
+        .fetch_optional(&self.db)
+        .await?;
+
+        if file.is_some() {
+            return Err(anyhow::anyhow!("file already exists"));
+        }
+
+        let new_file = File::new(self.db.clone(), self.op.clone(), path.to_string());
+
+        Ok(new_file)
     }
 }

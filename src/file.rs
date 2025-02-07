@@ -14,6 +14,16 @@ pub struct File {
 }
 
 impl File {
+    /// Create a new file.
+    pub(crate) fn new(db: SqlitePool, op: Operator, path: String) -> Self {
+        Self {
+            db,
+            op,
+            path,
+            chunk_ids: Vec::new(),
+        }
+    }
+
     /// Write given buffer to the file.
     ///
     /// This function will calculate the chunk id from the buffer and write
@@ -61,7 +71,9 @@ impl File {
         let chunk_id_content = chunk_ids.encode_to_vec();
 
         sqlx::query!(
-            r#"INSERT INTO files (path, chunks) VALUES (?, ?)"#,
+            r#"
+                INSERT INTO files (path, chunks) VALUES (?, ?)
+            "#,
             self.path,
             chunk_id_content
         )
