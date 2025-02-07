@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            CREATE TABLE IF NOT EXISTS file_chunks (\n                id TEXT PRIMARY KEY NOT NULL,\n                size INTEGER NOT NULL\n            )\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": []
+  },
+  "hash": "7380b46c13b7578482b2ceaebabe748b83cdbcc9a5db7657fa24305e37a2f8a1"
+}
