@@ -39,23 +39,4 @@ impl Fs {
 
         Ok(Fs { db, _op: op })
     }
-
-    /// Add a file to the filesystem.
-    ///
-    /// This function will add file record in the database. The chunk must
-    /// have already been uploaded to the storage.
-    pub async fn commit_file_in_db(&self, path: String, chunk_ids: Vec<String>) -> Result<()> {
-        let chunk_ids = super::specs::FileChunkIds { ids: chunk_ids };
-        let chunk_id_content = chunk_ids.encode_to_vec();
-
-        sqlx::query!(
-            r#"INSERT INTO files (path, chunks) VALUES (?, ?)"#,
-            path,
-            chunk_id_content
-        )
-        .execute(&self.db)
-        .await?;
-
-        Ok(())
-    }
 }
