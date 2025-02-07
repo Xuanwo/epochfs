@@ -2,11 +2,11 @@ use std::mem;
 
 use anyhow::Result;
 use base64::Engine as _;
-use chrono::Utc;
 use futures::TryStreamExt;
 use opendal::{Buffer, Operator};
 use prost::Message;
 use sqlx::{QueryBuilder, SqlitePool};
+use uuid::{NoContext, Timestamp};
 
 use crate::{
     specs::{self, Checkpoint, FileChunks},
@@ -71,8 +71,7 @@ impl Fs {
             chunks: Some(FileChunks { ids: chunk_ids }),
         };
         let bs = checkpoint.encode_to_vec();
-        // FIXME: we should use better checkpoint name.
-        let checkpoint_name = Utc::now().timestamp().to_string();
+        let checkpoint_name = uuid::Uuid::new_v7(Timestamp::now(NoContext)).to_string();
         let checkpoint_path = format!("{}/{}.checkpoint", &self.log_path, checkpoint_name);
         self.op.write(&checkpoint_path, bs).await?;
         Ok(checkpoint_name)
