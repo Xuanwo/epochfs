@@ -1,7 +1,12 @@
 use anyhow::Result;
+use futures::StreamExt;
 use opendal::Buffer;
+use std::mem;
+use std::pin::pin;
 
 use crate::Fs;
+
+const DEFAULT_CHUNK_SIZE: usize = 8 * 1024 * 1024;
 
 /// File represents a file in the epochfs.
 #[derive(Debug, Clone)]
@@ -40,6 +45,51 @@ impl File {
     pub async fn write(&mut self, bs: Buffer) -> Result<()> {
         let chunk_id = self.fs.write_chunk(bs).await?;
         self.chunks.push(chunk_id);
+        Ok(())
+    }
+
+    /// Write a stream of buffers to the file.
+    ///
+    /// sink will make sure that all chunks are aligned with 8MiB.
+    pub async fn sink(
+        &mut self,
+        mut stream: impl futures::Stream<Item = Result<Buffer>>,
+    ) -> Result<()> {
+        let mut stream = pin!(stream);
+
+        let mut chunks = Vec::new();
+        let mut size = 0;
+        while let Some(bs) = stream.next().await {
+            let bs = bs?;
+            if size + bs.len() < DEFAULT_CHUNK_SIZE {
+                size += bs.len();
+                chunks.push(bs);
+                continue;
+            }
+
+            let consume_size = DEFAULT_CHUNK_SIZE - size;
+            // Push the last chunk.
+            chunks.push(bs.slice(0..consume_size));
+            self.fs
+                .write_chunk(Buffer::from_iter(
+                    mem::take(&mut chunks).into_iter().flatten(),
+                ))
+                .await?;
+
+            if consume_size < bs.len() {
+                chunks.push(bs.slice(consume_size..));
+                size += bs.len() - consume_size;
+            } else {
+                size = 0
+            }
+        }
+        if size > 0 {
+            self.fs
+                .write_chunk(Buffer::from_iter(
+                    mem::take(&mut chunks).into_iter().flatten(),
+                ))
+                .await?;
+        }
         Ok(())
     }
 

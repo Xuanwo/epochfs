@@ -246,6 +246,7 @@ fn chunk_id(bs: Buffer) -> String {
 #[cfg(test)]
 mod tests {
     use anyhow::Result;
+    use futures::stream;
     use opendal::{services::MemoryConfig, Buffer};
     use pretty_assertions::assert_eq;
 
@@ -285,6 +286,51 @@ mod tests {
 
         let actual = fs.read_chunk(&id).await?;
         assert_eq!(source.to_vec(), actual.to_vec());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_create_file_with_sink() -> Result<()> {
+        let op = Operator::from_config(MemoryConfig::default())?.finish();
+        let fs = Fs::new(op).await?;
+
+        let source = Buffer::from("hello world");
+        let id = chunk_id(source.clone());
+
+        let mut file = fs.create_file("hello.txt").await?;
+        file.sink(stream::iter([Ok(source.clone())])).await?;
+        file.commit().await?;
+
+        let actual = fs.read_chunk(&id).await?;
+        assert_eq!(source.to_vec(), actual.to_vec());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_create_file_with_large_sink() -> Result<()> {
+        let op = Operator::from_config(MemoryConfig::default())?.finish();
+        let fs = Fs::new(op).await?;
+
+        let source = Buffer::from(vec![6u8; 3 * 1024 * 1024]);
+        let id_8mib = chunk_id(Buffer::from(vec![6; 8 * 1024 * 1024]));
+        let id_1mib = chunk_id(Buffer::from(vec![6; 1024 * 1024]));
+
+        let mut file = fs.create_file("hello.txt").await?;
+        // We are writing 3 * 3MiB of data, so we should have 2 chunks:
+        // the first is 8MiB, the second is 1MiB.
+        file.sink(stream::iter([
+            Ok(source.clone()),
+            Ok(source.clone()),
+            Ok(source.clone()),
+        ]))
+        .await?;
+        file.commit().await?;
+
+        let actual_8mib = fs.read_chunk(&id_8mib).await?;
+        assert_eq!(vec![6; 8 * 1024 * 1024].to_vec(), actual_8mib.to_vec());
+
+        let actual_1mib = fs.read_chunk(&id_1mib).await?;
+        assert_eq!(vec![6; 1024 * 1024].to_vec(), actual_1mib.to_vec());
         Ok(())
     }
 
