@@ -355,6 +355,9 @@ mod tests {
 
         let actual = fs.read_chunk(&id).await?;
         assert_eq!(source.to_vec(), actual.to_vec());
+
+        let actual = files[0].read().await?;
+        assert_eq!(source.to_vec(), actual.to_vec());
         Ok(())
     }
 

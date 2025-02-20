@@ -1,5 +1,5 @@
 use anyhow::Result;
-use futures::StreamExt;
+use futures::{Stream, StreamExt, TryStreamExt};
 use opendal::Buffer;
 use std::mem;
 use std::pin::pin;
@@ -51,10 +51,7 @@ impl File {
     /// Write a stream of buffers to the file.
     ///
     /// sink will make sure that all chunks are aligned with 8MiB.
-    pub async fn sink(
-        &mut self,
-        mut stream: impl futures::Stream<Item = Result<Buffer>>,
-    ) -> Result<()> {
+    pub async fn sink(&mut self, mut stream: impl Stream<Item = Result<Buffer>>) -> Result<()> {
         let mut stream = pin!(stream);
 
         let mut chunks = Vec::new();
@@ -97,5 +94,21 @@ impl File {
     pub async fn commit(&mut self) -> Result<()> {
         self.fs.commit_file(&self.path, self.chunks.clone()).await?;
         Ok(())
+    }
+
+    /// Read given file into buffer.
+    pub async fn read(&self) -> Result<Buffer> {
+        let buffers: Vec<_> = self.stream().await?.try_collect().await?;
+        Ok(Buffer::from_iter(buffers.into_iter().flatten()))
+    }
+
+    /// Stream the entire content file in buffers.
+    pub async fn stream(&self) -> Result<impl Stream<Item = Result<Buffer>>> {
+        let fs = self.fs.clone();
+        let stream = futures::stream::iter(self.chunks.clone()).then(move |v| {
+            let fs = fs.clone();
+            async move { fs.read_chunk(&v).await }
+        });
+        Ok(stream)
     }
 }
