@@ -33,6 +33,11 @@ impl File {
         (self.path, self.chunks)
     }
 
+    /// Get the path of the file.
+    pub fn path(&self) -> &str {
+        &self.path
+    }
+
     /// Write given buffer to the file.
     ///
     /// This function will calculate the chunk id from the buffer and write
