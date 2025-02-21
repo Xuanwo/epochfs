@@ -13,8 +13,8 @@ const DEFAULT_CHUNK_SIZE: usize = 8 * 1024 * 1024;
 pub struct File {
     fs: Fs,
 
-    path: String,
-    chunks: Vec<String>,
+    pub(crate) path: String,
+    pub(crate) chunks: Vec<String>,
 }
 
 impl File {
@@ -67,11 +67,10 @@ impl File {
             let consume_size = DEFAULT_CHUNK_SIZE - size;
             // Push the last chunk.
             chunks.push(bs.slice(0..consume_size));
-            self.fs
-                .write_chunk(Buffer::from_iter(
-                    mem::take(&mut chunks).into_iter().flatten(),
-                ))
-                .await?;
+            self.write(Buffer::from_iter(
+                mem::take(&mut chunks).into_iter().flatten(),
+            ))
+            .await?;
 
             if consume_size < bs.len() {
                 chunks.push(bs.slice(consume_size..));
@@ -81,11 +80,10 @@ impl File {
             }
         }
         if size > 0 {
-            self.fs
-                .write_chunk(Buffer::from_iter(
-                    mem::take(&mut chunks).into_iter().flatten(),
-                ))
-                .await?;
+            self.write(Buffer::from_iter(
+                mem::take(&mut chunks).into_iter().flatten(),
+            ))
+            .await?;
         }
         Ok(())
     }
