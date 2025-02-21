@@ -96,7 +96,7 @@ impl Fs {
         .await?;
 
         if file.is_some() {
-            return Err(anyhow::anyhow!("file already exists"));
+            return Err(anyhow::anyhow!("file {path} already exists"));
         }
 
         let new_file = File::new(self.clone(), path.to_string());
@@ -122,6 +122,11 @@ impl Fs {
             path.to_string(),
             FileChunks::decode(record.chunks.as_slice())?.ids,
         );
+        log::debug!(
+            "open file {} with {} chunks loaded",
+            path,
+            file.chunks.len()
+        );
 
         Ok(Some(file))
     }
@@ -142,6 +147,8 @@ impl Fs {
 
     /// Commit the file to the database.
     pub(crate) async fn commit_file(&self, path: &str, chunk_ids: Vec<String>) -> Result<()> {
+        log::debug!("commit file {} with {} chunks saved", path, chunk_ids.len());
+
         let chunk_ids = super::specs::FileChunks { ids: chunk_ids };
         let chunk_id_content = chunk_ids.encode_to_vec();
 

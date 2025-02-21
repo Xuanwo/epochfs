@@ -360,6 +360,7 @@ dependencies = [
  "base64",
  "blake3",
  "futures",
+ "log",
  "opendal",
  "pretty_assertions",
  "prost",
