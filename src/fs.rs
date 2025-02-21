@@ -104,6 +104,28 @@ impl Fs {
         Ok(new_file)
     }
 
+    /// Open a file for reading.
+    pub async fn open_file(&self, path: &str) -> Result<Option<File>> {
+        let Some(record) = sqlx::query!(
+            r"
+                SELECT * FROM files WHERE path = ?
+            ",
+            path
+        )
+        .fetch_optional(&self.db)
+        .await?
+        else {
+            return Ok(None);
+        };
+        let file = File::with_chunks(
+            self.clone(),
+            path.to_string(),
+            FileChunks::decode(record.chunks.as_slice())?.ids,
+        );
+
+        Ok(Some(file))
+    }
+
     /// Check if the file exists in the filesystem.
     pub async fn check_file(&self, path: &str) -> Result<bool> {
         let file = sqlx::query!(
@@ -331,6 +353,24 @@ mod tests {
 
         let actual_1mib = fs.read_chunk(&id_1mib).await?;
         assert_eq!(vec![6; 1024 * 1024].to_vec(), actual_1mib.to_vec());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_open_file() -> Result<()> {
+        let op = Operator::from_config(MemoryConfig::default())?.finish();
+        let fs = Fs::new(op).await?;
+
+        let source = Buffer::from("hello world");
+
+        let mut file = fs.create_file("hello.txt").await?;
+        file.write(source.clone()).await?;
+        file.commit().await?;
+
+        let file = fs.open_file("hello.txt").await?.expect("file must exist");
+
+        let actual = file.read().await?;
+        assert_eq!(source.to_vec(), actual.to_vec());
         Ok(())
     }
 
