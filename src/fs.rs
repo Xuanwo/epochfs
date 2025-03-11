@@ -198,15 +198,21 @@ impl Fs {
                 .map(|file| (file.path, file.chunks.unwrap_or_default().encode_to_vec()))
                 .collect::<Vec<_>>();
 
-            let mut query_builder = QueryBuilder::new("INSERT INTO files (path, chunks) ");
+            // Insert the files in batch.
+            //
+            // sqlite allows up to 1000 parameters in a single query, we use 400 here.
+            const BATCH_SIZE: usize = 400;
 
-            query_builder.push_values(files, |mut b, (path, chunks)| {
-                b.push_bind(path).push_bind(chunks);
-            });
+            for sql_chunk in files.chunks(BATCH_SIZE) {
+                let mut query_builder = QueryBuilder::new("INSERT INTO files (path, chunks) ");
 
-            let query = query_builder.build();
+                query_builder.push_values(sql_chunk, |mut b, (path, chunks)| {
+                    b.push_bind(path).push_bind(chunks);
+                });
 
-            query.execute(&self.db).await?;
+                let query = query_builder.build();
+                query.execute(&self.db).await?;
+            }
         }
 
         Ok(())
