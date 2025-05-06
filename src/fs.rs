@@ -1,9 +1,11 @@
+use crate::file::DEFAULT_CHUNK_SIZE;
 use crate::specs::v1 as specs_v1;
 use crate::{file::FileWriter, File};
 use anyhow::anyhow;
 use anyhow::Result;
 use base64::Engine as _;
 use chrono::Utc;
+use futures::StreamExt;
 use opendal::{Buffer, ErrorKind, Operator};
 use std::{collections::BTreeMap, sync::Arc};
 
@@ -127,6 +129,28 @@ impl Fs {
             return Err(anyhow!("metadata version mismatch"));
         }
         Ok(metadata.manifest)
+    }
+
+    pub async fn load_from(&mut self, external: Operator) -> Result<()> {
+        let mut lister = external.lister("/").await?;
+
+        while let Some(file) = lister.next().await.transpose()? {
+            let stream = external
+                .reader_with(file.path())
+                .chunk(DEFAULT_CHUNK_SIZE)
+                .concurrent(2)
+                .await?
+                .into_stream(..)
+                .await?;
+            let mut writer = self.new_file_writer(file.path());
+            writer.write_from_stream(stream).await?;
+            let file = writer.close().await?;
+            self.insert_file(file);
+        }
+
+        let manifest = self.write_manifest().await?;
+        self.write_metadata(&manifest).await?;
+        Ok(())
     }
 }
 
