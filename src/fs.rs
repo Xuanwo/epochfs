@@ -77,17 +77,28 @@ impl Fs {
     /// Returning the chunk id of the manifest.
     pub async fn write_manifest(&self) -> Result<String> {
         let manifest = specs_v1::Manifest {
-            files: self
-                .files
-                .clone()
-                .into_values()
-                .map(File::into_specs_v1)
-                .collect(),
+            files: self.files.clone().into_values().map(File::into).collect(),
         };
         let manifest_content: Buffer =
             bincode::encode_to_vec(manifest, bincode::config::standard())?.into();
         let chunk_id = self.ctx.write_chunk(manifest_content).await?;
         Ok(chunk_id)
+    }
+
+    /// Read the manifest from the file system.
+    pub async fn read_manifest(&mut self, manifest_path: &str) -> Result<()> {
+        let mut manifest_content = self.ctx.op.read(manifest_path).await?;
+        let manifest: specs_v1::Manifest =
+            bincode::decode_from_std_read(&mut manifest_content, bincode::config::standard())?;
+
+        // clear all existsing files before loading.
+        //
+        // TODO: we need to compare the files update time.
+        self.files.clear();
+        for file in manifest.files {
+            self.files.insert(file.path.clone(), file.into());
+        }
+        Ok(())
     }
 
     /// TODO: we should support automatically merge.
@@ -105,6 +116,17 @@ impl Fs {
             .if_match(&self.ctx.previous_etag)
             .await?;
         Ok(())
+    }
+
+    pub async fn read_metadata(&self) -> Result<String> {
+        let mut metadata_content = self.ctx.op.read(&self.ctx.metadata_path).await?;
+        let metadata: specs_v1::Metadata =
+            bincode::decode_from_std_read(&mut metadata_content, bincode::config::standard())?;
+
+        if metadata.version != self.ctx.version {
+            return Err(anyhow!("metadata version mismatch"));
+        }
+        Ok(metadata.manifest)
     }
 }
 

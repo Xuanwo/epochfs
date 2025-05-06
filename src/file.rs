@@ -19,17 +19,30 @@ pub struct File {
 }
 
 impl File {
-    pub fn into_specs_v1(self) -> specs_v1::File {
-        specs_v1::File {
-            path: self.path,
-            chunks: self.chunks,
-            size: self.size,
-            last_modified: self.last_modified.timestamp() as u64,
-        }
-    }
-
     pub fn path(&self) -> &str {
         &self.path
+    }
+}
+
+impl From<specs_v1::File> for File {
+    fn from(value: specs_v1::File) -> Self {
+        Self {
+            path: value.path,
+            chunks: value.chunks,
+            size: value.size,
+            last_modified: DateTime::from_timestamp(value.last_modified as i64, 0).unwrap(),
+        }
+    }
+}
+
+impl From<File> for specs_v1::File {
+    fn from(value: File) -> specs_v1::File {
+        specs_v1::File {
+            path: value.path,
+            chunks: value.chunks,
+            size: value.size,
+            last_modified: value.last_modified.timestamp() as u64,
+        }
     }
 }
 
