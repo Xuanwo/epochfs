@@ -4,7 +4,7 @@ EpochFS is a versioned cloud file system with git-like branching, transaction su
 
 ## Motivation
 
-EpochFS is inspired by [delta Lake](https://github.com/delta-io/delta-rs/) and [lakeFS](https://github.com/delta-io/delta-rs/), it is a data lake but for files, offering git-like branching, transaction support, and scaling to handle exabyte-level data effortlessly.
+EpochFS is inspired by [delta Lake](https://github.com/delta-io/delta-rs/) and [lakeFS](https://github.com/treeverse/lakeFS), it is a data lake but for files, offering git-like branching, transaction support, and scaling to handle exabyte-level data effortlessly.
 
 ## Features in minds
 
