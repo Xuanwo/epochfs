@@ -1,117 +1,112 @@
+use std::{mem, sync::Arc};
+
+use crate::{fs::FsContext, specs::v1 as specs_v1};
 use anyhow::Result;
-use futures::{Stream, StreamExt, TryStreamExt};
+use bytes::Buf as _;
+use chrono::{DateTime, Utc};
 use opendal::Buffer;
-use std::mem;
-use std::pin::pin;
 
-use crate::Fs;
-
+/// Use 8MiB as the default chunk size.
 const DEFAULT_CHUNK_SIZE: usize = 8 * 1024 * 1024;
 
-/// File represents a file in the epochfs.
 #[derive(Debug, Clone)]
 pub struct File {
-    fs: Fs,
+    path: String,
+    chunks: Vec<String>,
 
-    pub(crate) path: String,
-    pub(crate) chunks: Vec<String>,
+    size: u64,
+    last_modified: DateTime<Utc>,
 }
 
 impl File {
-    /// Create a new file.
-    pub(crate) fn new(fs: Fs, path: String) -> Self {
-        Self::with_chunks(fs, path, Vec::new())
+    pub fn into_specs_v1(self) -> specs_v1::File {
+        specs_v1::File {
+            path: self.path,
+            chunks: self.chunks,
+            size: self.size,
+            last_modified: self.last_modified.timestamp() as u64,
+        }
     }
 
-    /// Create a new file.
-    pub(crate) fn with_chunks(fs: Fs, path: String, chunks: Vec<String>) -> Self {
-        Self { fs, path, chunks }
-    }
-
-    /// Get the path and chunks of the file.
-    pub(crate) fn into_parts(self) -> (String, Vec<String>) {
-        (self.path, self.chunks)
-    }
-
-    /// Get the path of the file.
     pub fn path(&self) -> &str {
         &self.path
     }
+}
 
-    /// Write given buffer to the file.
-    ///
-    /// This function will calculate the chunk id from the buffer and write
-    /// the buffer to the storage. If the chunk id already exists, we can
-    /// reuse the existing chunk instead of creating a new one.
-    ///
-    /// # TODO
-    ///
-    /// We can use if-not-exists to save an extra request.
-    pub async fn write(&mut self, bs: Buffer) -> Result<()> {
-        let chunk_id = self.fs.write_chunk(bs).await?;
-        self.chunks.push(chunk_id);
-        Ok(())
-    }
+pub struct FileWriter {
+    ctx: Arc<FsContext>,
+    path: String,
 
-    /// Write a stream of buffers to the file.
-    ///
-    /// sink will make sure that all chunks are aligned with 8MiB.
-    pub async fn sink(&mut self, mut stream: impl Stream<Item = Result<Buffer>>) -> Result<()> {
-        let mut stream = pin!(stream);
+    total_size: u64,
+    chunks: Vec<String>,
 
-        let mut chunks = Vec::new();
-        let mut size = 0;
-        while let Some(bs) = stream.next().await {
-            let bs = bs?;
-            if size + bs.len() < DEFAULT_CHUNK_SIZE {
-                size += bs.len();
-                chunks.push(bs);
-                continue;
-            }
+    buf_size: usize,
+    buf: Vec<Buffer>,
+}
 
-            let consume_size = DEFAULT_CHUNK_SIZE - size;
-            // Push the last chunk.
-            chunks.push(bs.slice(0..consume_size));
-            self.write(Buffer::from_iter(
-                mem::take(&mut chunks).into_iter().flatten(),
-            ))
-            .await?;
+impl FileWriter {
+    pub fn new(ctx: Arc<FsContext>, path: String) -> Self {
+        Self {
+            ctx,
+            path,
 
-            if consume_size < bs.len() {
-                chunks.push(bs.slice(consume_size..));
-                size += bs.len() - consume_size;
-            } else {
-                size = 0
-            }
+            total_size: 0,
+            chunks: vec![],
+            buf_size: 0,
+            buf: vec![],
         }
-        if size > 0 {
-            self.write(Buffer::from_iter(
-                mem::take(&mut chunks).into_iter().flatten(),
-            ))
-            .await?;
+    }
+
+    pub async fn write(&mut self, buf: Buffer) -> Result<()> {
+        self.buf_size += buf.len();
+        self.buf.push(buf);
+
+        if self.buf_size >= DEFAULT_CHUNK_SIZE {
+            self.flush(false).await?;
         }
+
         Ok(())
     }
 
-    /// Commit the file to the database.
-    pub async fn commit(&mut self) -> Result<()> {
-        self.fs.commit_file(&self.path, self.chunks.clone()).await?;
+    pub async fn close(&mut self) -> Result<File> {
+        self.flush(true).await?;
+        Ok(File {
+            path: self.path.clone(),
+            chunks: mem::take(&mut self.chunks),
+            size: self.total_size,
+            last_modified: Utc::now(),
+        })
+    }
+
+    /// Flush the buffer to the file system.
+    ///
+    /// If `finish` is true, it means that this is the last flush,
+    /// it will flush all buffers no matter it's larger than chunk_size or not.
+    async fn flush(&mut self, finish: bool) -> Result<()> {
+        let mut buf: Buffer = self.buf.drain(..).flatten().collect();
+
+        while self.buf_size >= DEFAULT_CHUNK_SIZE {
+            let to_write = buf.slice(..DEFAULT_CHUNK_SIZE);
+            let chunk_id = self.ctx.write_chunk(to_write).await?;
+            buf.advance(DEFAULT_CHUNK_SIZE);
+            self.buf_size -= DEFAULT_CHUNK_SIZE;
+            self.total_size += DEFAULT_CHUNK_SIZE as u64;
+            self.chunks.push(chunk_id);
+        }
+
+        if self.buf_size == 0 {
+            return Ok(());
+        }
+
+        if finish {
+            let chunk_id = self.ctx.write_chunk(buf).await?;
+            self.total_size += self.buf_size as u64;
+            self.buf_size = 0;
+            self.chunks.push(chunk_id);
+        } else {
+            self.buf.push(buf);
+        }
+
         Ok(())
-    }
-
-    /// Read given file into buffer.
-    pub async fn read(&self) -> Result<Buffer> {
-        let buffers: Vec<_> = self.stream().await?.try_collect().await?;
-        Ok(Buffer::from_iter(buffers.into_iter().flatten()))
-    }
-
-    /// Stream the entire content file in buffers.
-    pub async fn stream(&self) -> Result<impl Stream<Item = Result<Buffer>>> {
-        let fs = self.fs.clone();
-        let stream = futures::stream::iter(self.chunks.clone()).then(move |v| {
-            let fs = fs.clone();
-            async move { fs.read_chunk(&v).await }
-        });
-        Ok(stream)
     }
 }
