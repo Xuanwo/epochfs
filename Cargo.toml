@@ -10,7 +10,7 @@ anyhow = "1.0.95"
 base64 = "0.22.1"
 blake3 = "1.5.5"
 futures = "0.3.31"
-opendal = "0.51.2"
+opendal = "0.53.1"
 uuid = { version = "1.13.1", features = ["v7"] }
 log = "0.4.25"
 bincode = "2.0.1"
@@ -20,7 +20,7 @@ chrono = "0.4.41"
 [dev-dependencies]
 pretty_assertions = "1.4.1"
 tokio = { version = "1", features = ["full"] }
-opendal = { version = "0.51.2", features = ["services-fs"] }
+opendal = { version = "0.53.1", features = ["services-fs"] }
 
 [build-dependencies]
 prost-build = "0.13.4"
