@@ -4,10 +4,11 @@ use crate::{fs::FsContext, specs::v1 as specs_v1};
 use anyhow::Result;
 use bytes::Buf as _;
 use chrono::{DateTime, Utc};
-use opendal::Buffer;
+use futures::StreamExt as _;
+use opendal::{Buffer, BufferStream};
 
 /// Use 8MiB as the default chunk size.
-const DEFAULT_CHUNK_SIZE: usize = 8 * 1024 * 1024;
+pub const DEFAULT_CHUNK_SIZE: usize = 8 * 1024 * 1024;
 
 #[derive(Debug, Clone)]
 pub struct File {
@@ -78,6 +79,13 @@ impl FileWriter {
             self.flush(false).await?;
         }
 
+        Ok(())
+    }
+
+    pub async fn write_from_stream(&mut self, mut s: BufferStream) -> Result<()> {
+        while let Some(buf) = s.next().await {
+            self.write(buf?).await?;
+        }
         Ok(())
     }
 
